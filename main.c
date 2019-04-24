@@ -2,15 +2,21 @@
 #include <errno.h>
 #include <string.h>
 #include <unistd.h>
+#ifndef WIN32
 #include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#else
+#include <windows.h>
+#endif
 #include <time.h>
 #include <stdlib.h>
+#include <strings.h>
+#include <stdint.h>
 
 #define PORT (53)
-#define SERVERADDRESS "127.0.0.1"
+#define SERVERADDRESS "1.1.1.1"
 #define ARRAY_SIZE(array) (sizeof(array)/sizeof(array[0]))
 
 typedef struct dns_packet_s {
@@ -50,6 +56,17 @@ int main() {
     int sockfd;
     struct sockaddr_in server;
 
+#ifdef WIN32
+    WORD version_requested = MAKEWORD(1, 1);
+    WSADATA wsa_data = { 0 };
+
+    int err = WSAStartup(version_requested, &wsa_data);
+
+    if (err != 0) {
+        return 0;
+    }
+#endif
+
     printf("Configure socket...\n");
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
@@ -57,24 +74,31 @@ int main() {
         return 1;
     }
 
-    bzero((char *) &server, sizeof(server));
+    memset((char *) &server, 0, sizeof(server));
     server.sin_family = AF_INET;
     server.sin_addr.s_addr = inet_addr(SERVERADDRESS);
     server.sin_port = htons(PORT);
 
     printf("Send UDP data...\n");
 
-    if (sendto(sockfd, &dns_packet_pack, ARRAY_SIZE(dns_packet_pack), 0, (const struct sockaddr *) &server, sizeof(server)) < 0) {
+    if (sendto(sockfd, (char *)&dns_packet_pack, ARRAY_SIZE(dns_packet_pack), 0, (const struct sockaddr *) &server, sizeof(server)) < 0) {
         fprintf(stderr, "Error in sendto()\n");
         return 1;
     }
 
-    if (recv(sockfd, &buffer, ARRAY_SIZE(buffer), 0) < 0) {
+    if (recv(sockfd, (char *)&buffer, ARRAY_SIZE(buffer), 0) < 0) {
         fprintf(stderr, "Error in recv()\n");
         return 1;
     }
 
     print_buffer();
+
+#ifdef WIN32
+    closesocket(sockfd);
+    WSACleanup();
+#else
+    close(sockfd);
+#endif
 
     return 0;
 }
